@@ -1,4 +1,4 @@
-"""TITAN V1 serverless: LTX (motion) -> Wan 14B V2V (+cinema LoRA) -> Real-ESRGAN -> voice/music -> mp4.
+"""TITAN V1 serverless: LTX (motion) -> Wan 14B V2V (+cinema LoRA) -> Real-ESRGAN -> voice (ChatTTS, Kokoro fallback)/music -> mp4.
 
 Needs a 48 GB+ GPU and ~64 GB system RAM (both big models use CPU offload).
 Put HF cache on a network volume (HF_HOME=/runpod-volume/hf) to avoid re-downloading ~60 GB per cold start.
@@ -70,6 +70,17 @@ try:
 except Exception as e:
     print(f"⚠️ Real-ESRGAN nuk u ngarkua, po përdoret Lanczos: {e}")
 
+# 4. ChatTTS (zëri kryesor); Kokoro mbetet zgjedhja e dytë
+chat_tts = None
+try:
+    import ChatTTS
+    chat_tts = ChatTTS.Chat()
+    chat_tts.load(source="huggingface", compile=False)
+    print("✅ ChatTTS u ngarkua")
+except Exception as e:
+    chat_tts = None
+    print(f"⚠️ ChatTTS nuk u ngarkua, përdoret Kokoro: {e}")
+
 print("✅ TITAN V1 Serverless Core është GATI!")
 
 # Harta e plotë e zërave
@@ -84,7 +95,25 @@ VOICE_MAP = {
 }
 
 
-def generate_voice_audio(text, voice_key, output_path):
+# ChatTTS nuk ka zëra të emërtuar: çdo emër = një seed fiks (zë i qëndrueshëm). Ndrysho seed-et sipas shijes.
+CHATTTS_SEEDS = {"adam": 2, "george": 1111, "bella": 4099, "sarah": 6615, "michael": 3333}
+
+
+def chattts_audio(text, voice_key, output_path):
+    import re, soundfile as sf
+    seed = CHATTTS_SEEDS.get(voice_key, CHATTTS_SEEDS["adam"])
+    torch.manual_seed(seed)
+    spk = chat_tts.sample_random_speaker()
+    params = ChatTTS.Chat.InferCodeParams(spk_emb=spk, temperature=0.3, top_P=0.7, top_K=20)
+    # ChatTTS shkon më mirë me fjali të shkurtra
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", text) if x.strip()]
+    wavs = chat_tts.infer(sentences or [text], params_infer_code=params)
+    audio = np.concatenate([np.asarray(w).reshape(-1) for w in wavs])
+    sf.write(output_path, audio, 24000)
+    return os.path.exists(output_path)
+
+
+def generate_voice_audio(text, voice_key, output_path, engine="chattts"):
     """
     Ruan zgjedhjen e klientit dhe kthen (sukses, emri_real_i_zerit)
     """
@@ -104,7 +133,15 @@ def generate_voice_audio(text, voice_key, output_path):
         asyncio.run(run_sq())
         return os.path.exists(output_path), target_voice
 
-    # 2. Kokoro Neural Voices (adam, george, bella, etj.)
+    # 2. ChatTTS (parazgjedhja)
+    if engine != "kokoro" and chat_tts is not None:
+        try:
+            if chattts_audio(text, voice_key_clean, output_path):
+                return True, f"chattts:{voice_key_clean}"
+        except Exception as e:
+            print(f"Gabim në ChatTTS ({e}), kalon te Kokoro...")
+
+    # 3. Kokoro Neural Voices (adam, george, bella, etj.)
     try:
         from kokoro import KPipeline
         import soundfile as sf
@@ -200,6 +237,7 @@ def handler(job):
     wan_prompt = job_input.get("wan_prompt", prompt)
     narration = (job_input.get("narration", "") or "").strip()
     voice = job_input.get("voice", "adam")
+    tts_engine = (job_input.get("tts", "chattts") or "chattts").lower()   # "chattts" | "kokoro"
     aspect = job_input.get("aspect", "9:16")
     enable_4k = job_input.get("enable_4k", True)      # ESRGAN + upscale to final size
     true_4k = bool(job_input.get("true_4k", False))   # False -> 1080x1920, True -> 2160x3840
@@ -251,7 +289,6 @@ def handler(job):
                     prompt=wan_prompt,
                     negative_prompt="worst quality, blurry, deformed, lowres, jitter, static",
                     height=h, width=w,
-                    num_frames=wan_n,
                     num_inference_steps=wan_steps,
                     guidance_scale=5.0,
                     strength=wan_strength,
@@ -286,7 +323,7 @@ def handler(job):
     # 4. Zëri + muzika
     has_voice, actual_voice_used = False, "none"
     if narration:
-        has_voice, actual_voice_used = generate_voice_audio(narration, voice, audio_file)
+        has_voice, actual_voice_used = generate_voice_audio(narration, voice, audio_file, tts_engine)
     has_music = get_music(job_input, seconds, music_file) if (
         job_input.get("music_url") or job_input.get("music_prompt")) else False
 

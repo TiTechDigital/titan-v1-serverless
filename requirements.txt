@@ -13,3 +13,4 @@ numpy<2
 imageio
 imageio-ffmpeg
 ftfy
+ChatTTS>=0.2.5

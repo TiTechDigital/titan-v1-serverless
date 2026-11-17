@@ -111,9 +111,10 @@ class Upscaler:
                 ]
         return out
 
+    @torch.inference_mode()
     def enhance(self, img: Image.Image) -> Image.Image:
         arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
         x = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).half().to(self.device)
-        y = self._run(x).clamp_(0, 1)
+        y = self._run(x).clamp(0, 1)
         y = (y[0].permute(1, 2, 0).float().cpu().numpy() * 255.0).round().astype(np.uint8)
         return Image.fromarray(y)
