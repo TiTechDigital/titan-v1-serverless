@@ -12,3 +12,4 @@ peft>=0.13.0
 numpy<2
 imageio
 imageio-ffmpeg
+ftfy

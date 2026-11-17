@@ -3,5 +3,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg espeak-n
 WORKDIR /
 COPY requirements.txt .
 RUN pip freeze | grep -E '^(torch|torchvision|torchaudio)==' > /constraints.txt && pip install --no-cache-dir -c /constraints.txt -r requirements.txt
-COPY handler.py .
+COPY esrgan.py handler.py ./
 CMD [ "python3", "-u", "/handler.py" ]
