@@ -94,7 +94,7 @@ class Upscaler:
         self.net = net.eval().half().to(device)
         self.device, self.tile, self.pad = device, tile, pad
 
-    @torch.inference_mode()
+    @torch.no_grad()
     def _run(self, x):
         _, _, h, w = x.shape
         t, p = self.tile, self.pad
@@ -111,7 +111,7 @@ class Upscaler:
                 ]
         return out
 
-    @torch.inference_mode()
+    @torch.no_grad()
     def enhance(self, img: Image.Image) -> Image.Image:
         arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
         x = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).half().to(self.device)
