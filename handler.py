@@ -37,49 +37,61 @@ print("✅ TITAN V1 Serverless Core është GATI!")
 
 # Harta e plotë e zërave
 VOICE_MAP = {
-    "adam": ("a", "am_adam"),       # Hollywood Deep Baritone
-    "george": ("b", "bm_george"),   # BBC Documentary British
-    "bella": ("a", "af_bella"),     # Female Cinematic
-    "sarah": ("a", "af_sarah"),     # Female Warm
-    "michael": ("a", "am_michael")  # Male Storyteller
+    "adam": ("a", "am_adam"),         # Hollywood Deep Baritone
+    "george": ("b", "bm_george"),     # BBC Documentary British
+    "bella": ("a", "af_bella"),       # Female Cinematic
+    "sarah": ("a", "af_sarah"),       # Female Warm
+    "michael": ("a", "am_michael"),   # Male Storyteller
+    "albanian": ("sq", "sq-AL-IlirNeural"),  # Shqip Ilir
+    "anila": ("sq", "sq-AL-AnilaNeural")     # Shqip Femëror
 }
 
 
 def generate_voice_audio(text, voice_key, output_path):
-    """Gjeneron zërin sipas parametrit dinamik të zgjedhur nga klienti"""
-    if voice_key in ["albanian", "ilir", "shqip"] or any(w in text.lower() for w in [" dhe ", " është ", " për ", " një "]):
-        # Përdorim motorin e përshtatur Shqip
+    """
+    Ruan zgjedhjen e klientit dhe kthen (sukses, emri_real_i_zerit)
+    """
+    voice_key_clean = (voice_key or "auto").lower().strip()
+
+    # 1. Shqip: kërkim eksplicit, ose "auto" dhe teksti është shqip
+    is_explicit_sq = voice_key_clean in ["albanian", "ilir", "shqip", "anila"]
+    is_auto_sq = voice_key_clean == "auto" and any(w in f" {text.lower()} " for w in [" dhe ", " është ", " për ", " një "])
+
+    if is_explicit_sq or is_auto_sq:
+        target_voice = "sq-AL-AnilaNeural" if voice_key_clean == "anila" else "sq-AL-IlirNeural"
         import asyncio, edge_tts
 
         async def run_sq():
-            comm = edge_tts.Communicate(text, "sq-AL-IlirNeural")
+            comm = edge_tts.Communicate(text, target_voice)
             await comm.save(output_path)
         asyncio.run(run_sq())
-        return os.path.exists(output_path)
+        return os.path.exists(output_path), target_voice
 
-    # Kokoro Neural Voices
+    # 2. Kokoro Neural Voices (adam, george, bella, etj.)
     try:
         from kokoro import KPipeline
         import soundfile as sf, numpy as np
 
-        lang_code, voice_id = VOICE_MAP.get(voice_key.lower(), ("a", "am_adam"))
+        # Nëse çelësi nuk ekziston, zgjedhim am_adam si standard
+        lang_code, voice_id = VOICE_MAP.get(voice_key_clean, ("a", "am_adam"))
         kpipe = KPipeline(lang_code=lang_code)
         generator = kpipe(text, voice=voice_id, speed=0.92)
 
         all_chunks = [audio for _, _, audio in generator]
         if all_chunks:
             sf.write(output_path, np.concatenate(all_chunks), 24000)
-            return True
+            return True, voice_id
     except Exception as e:
-        print(f"Gabim në gjenerimin e zërit ({e}), po përdorim fallback...")
+        print(f"Gabim në Kokoro ({e}), po përdorim fallback...")
         import asyncio, edge_tts
 
         async def run_fb():
             comm = edge_tts.Communicate(text, "en-US-ChristopherNeural")
             await comm.save(output_path)
         asyncio.run(run_fb())
-        return os.path.exists(output_path)
-    return False
+        return os.path.exists(output_path), "en-US-ChristopherNeural (fallback)"
+
+    return False, "none"
 
 
 def handler(job):
@@ -121,8 +133,9 @@ def handler(job):
 
     # 3. Zëri me përzgjedhje dinamike
     has_audio = False
+    actual_voice_used = "none"
     if narration.strip():
-        has_audio = generate_voice_audio(narration.strip(), voice, audio_file)
+        has_audio, actual_voice_used = generate_voice_audio(narration.strip(), voice, audio_file)
 
     # 4. Bashkimi Video + Audio me FFmpeg
     if has_audio:
@@ -151,7 +164,8 @@ def handler(job):
         "seconds_taken": round(time.time() - start_t, 2),
         "video_base64": f"data:video/mp4;base64,{video_b64}",
         "resolution": "4K Ultra-HD" if enable_4k else "HD",
-        "voice_used": voice
+        "voice_requested": voice,
+        "voice_used": actual_voice_used
     }
 
 
