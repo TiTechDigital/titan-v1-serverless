@@ -28,6 +28,8 @@ if not os.path.exists(lora_file):
 
 if os.path.exists(lora_file):
     try:
+        from safetensors.torch import load_file
+        print("LORA_KEYS_SAMPLE:", list(load_file(lora_file).keys())[:5])
         pipe.load_lora_weights(lora_file)
         print("⚡ TITAN LoRA u aktivizua me sukses në VRAM!")
     except Exception as e:
@@ -127,7 +129,7 @@ def handler(job):
     if enable_4k:
         target_w, target_h = (2160, 3840) if aspect == "9:16" else (3840, 2160)
         upscaled_4k = f"/tmp/4k_{run_id}.mp4"
-        cmd_4k = f'ffmpeg -y -i "{raw_video}" -vf "scale={target_w}:{target_h}:flags=lanczos,unsharp=5:5:1.2:5:5:0.0" -c:v libx264 -preset ultrafast -crf 17 -pix_fmt yuv420p "{upscaled_4k}"'
+        cmd_4k = f'ffmpeg -y -i "{raw_video}" -vf "scale={target_w}:{target_h}:flags=lanczos,unsharp=5:5:1.2:5:5:0.0" -c:v libx264 -preset ultrafast -crf 23 -level:v 5.2 -pix_fmt yuv420p "{upscaled_4k}"'
         if subprocess.run(cmd_4k, shell=True).returncode == 0:
             target_video = upscaled_4k
 
