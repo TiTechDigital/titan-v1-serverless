@@ -1,4 +1,4 @@
-diffusers>=0.31.0
+diffusers>=0.32.0,<0.36
 transformers>=4.45.0,<5
 accelerate>=0.34.0
 kokoro>=0.8.4
@@ -8,3 +8,4 @@ huggingface_hub>=0.25.0
 sentencepiece
 protobuf
 edge-tts
+peft>=0.13.0
