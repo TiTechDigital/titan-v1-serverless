@@ -36,30 +36,65 @@ def load_lora_remapped(pipeline, repo_file, adapter_name):
     print(f"⚡ LoRA '{adapter_name}' u aktivizua ({len(sd)} çelësa)")
 
 
-# 1. LTX-Video: lëvizja / kompozimi
-ltx = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.bfloat16)
-try:
-    load_lora_remapped(ltx, LTX_LORA_FILE, "titan_ltx")
-except Exception as e:
-    print(f"⚠️ LTX LoRA nuk u ngarkua (po përdoret modeli bazë): {e}")
-ltx.enable_model_cpu_offload()
-
-# 2. Wan 2.1 14B video-to-video + LoRA cinema
+# Lazy loaded pipelines për të mos tejkaluar limitin e System RAM (~46-50 GB)
+ltx = None
 wan = None
-try:
-    wan_vae = AutoencoderKLWan.from_pretrained(WAN_MODEL, subfolder="vae", torch_dtype=torch.float32)
-    wan = WanVideoToVideoPipeline.from_pretrained(WAN_MODEL, vae=wan_vae, torch_dtype=torch.bfloat16)
-    wan.scheduler = UniPCMultistepScheduler.from_config(wan.scheduler.config, flow_shift=3.0)  # 3.0 = 480p
-    try:
-        load_lora_remapped(wan, WAN_LORA_FILE, "titan_wan")
-    except Exception as e:
-        print(f"⚠️ Wan LoRA nuk u ngarkua (Wan pa LoRA): {e}")
-    wan.enable_model_cpu_offload()
-    wan.vae.enable_tiling()
-    print("✅ Wan 14B u ngarkua")
-except Exception as e:
-    wan = None
-    print(f"⚠️ Wan nuk u ngarkua, vazhdon vetëm LTX: {e}")
+
+
+def get_ltx_pipe():
+    global ltx
+    if ltx is None:
+        print("⏳ Duke ngarkuar LTX-Video...")
+        ltx = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.bfloat16)
+        try:
+            load_lora_remapped(ltx, LTX_LORA_FILE, "titan_ltx")
+        except Exception as e:
+            print(f"⚠️ LTX LoRA nuk u ngarkua (po përdoret modeli bazë): {e}")
+        ltx.enable_model_cpu_offload()
+        print("✅ LTX-Video u ngarkua")
+    return ltx
+
+
+def unload_ltx_pipe():
+    global ltx
+    if ltx is not None:
+        print("🧹 Duke liruar LTX-Video nga memoria...")
+        del ltx
+        ltx = None
+        gc.collect()
+        torch.cuda.empty_cache()
+
+
+def get_wan_pipe():
+    global wan
+    if wan is None:
+        print("⏳ Duke ngarkuar Wan 14B...")
+        try:
+            wan_vae = AutoencoderKLWan.from_pretrained(WAN_MODEL, subfolder="vae", torch_dtype=torch.float32)
+            wan = WanVideoToVideoPipeline.from_pretrained(WAN_MODEL, vae=wan_vae, torch_dtype=torch.bfloat16)
+            wan.scheduler = UniPCMultistepScheduler.from_config(wan.scheduler.config, flow_shift=3.0)  # 3.0 = 480p
+            try:
+                load_lora_remapped(wan, WAN_LORA_FILE, "titan_wan")
+            except Exception as e:
+                print(f"⚠️ Wan LoRA nuk u ngarkua (Wan pa LoRA): {e}")
+            wan.enable_model_cpu_offload()
+            wan.vae.enable_tiling()
+            print("✅ Wan 14B u ngarkua")
+        except Exception as e:
+            wan = None
+            print(f"⚠️ Wan nuk u ngarkua, vazhdon vetëm LTX: {e}")
+    return wan
+
+
+def unload_wan_pipe():
+    global wan
+    if wan is not None:
+        print("🧹 Duke liruar Wan 14B nga memoria...")
+        del wan
+        wan = None
+        gc.collect()
+        torch.cuda.empty_cache()
+
 
 # 3. Real-ESRGAN x4
 upscaler = None
@@ -262,9 +297,10 @@ def handler(job):
     output_final = f"/tmp/titan_{run_id}.mp4"
 
     # 1. LTX: lëvizja (8k+1 frames @24fps)
+    ltx_pipe = get_ltx_pipe()
     ltx_frames_n = int(round(seconds * LTX_FPS / 8)) * 8 + 1
     with torch.inference_mode():
-        frames = ltx(
+        frames = ltx_pipe(
             prompt=prompt,
             negative_prompt="worst quality, blurry, deformed, lowres",
             width=w, height=h,
@@ -276,15 +312,19 @@ def handler(job):
     in_fps = LTX_FPS
     wan_used = False
 
+    # Lirojmë LTX nga System RAM para se të ngarkohet Wan 14B
+    unload_ltx_pipe()
+
     # 2. Wan 14B + LoRA: video-to-video mbi lëvizjen e LTX (4k+1 frames @16fps)
-    if wan is not None:
+    wan_pipe = get_wan_pipe()
+    if wan_pipe is not None:
         try:
             wan_n = int(round(seconds * WAN_FPS / 4)) * 4 + 1
             idx = np.linspace(0, len(frames) - 1, wan_n).round().astype(int)
             src = [frames[i] for i in idx]
             torch.cuda.empty_cache()
             with torch.inference_mode():
-                wan_out = wan(
+                wan_out = wan_pipe(
                     video=src,
                     prompt=wan_prompt,
                     negative_prompt="worst quality, blurry, deformed, lowres, jitter, static",
@@ -298,6 +338,8 @@ def handler(job):
             del src, wan_out
         except Exception as e:
             print(f"⚠️ Wan dështoi, po përdoret dalja e LTX: {e}")
+        finally:
+            unload_wan_pipe()
         gc.collect()
         torch.cuda.empty_cache()
 
