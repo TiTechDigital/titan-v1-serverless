@@ -27,7 +27,7 @@ export function Lightbox({ item, onClose, onReuse, onSave, saving }: { item: His
         {r.wanUsed === false && <p className="text-[12.5px] text-tally">The cinema pass did not run. This clip is the base TITAN V1 motion only.</p>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="num text-[12px] text-dim">
-            {[r.resolution, r.duration && `${r.duration} s`, r.voiceUsed && r.voiceUsed !== "none" && r.voiceUsed, `${Math.round(r.elapsedMs / 1000)} s render`].filter(Boolean).join("   ")}
+            {[r.resolution, r.duration && `${r.duration} s`, r.voiceUsed && r.voiceUsed !== "none" && r.voiceUsed, r.elapsedMs > 0 && `${Math.round(r.elapsedMs / 1000)} s render`].filter(Boolean).join("   ")}
           </p>
           <div className="flex gap-2">
             <button type="button" className="btn" onClick={() => onReuse(item)}><RotateCcw size={14} /> Reuse prompt</button>

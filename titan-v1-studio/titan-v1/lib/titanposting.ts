@@ -27,6 +27,20 @@ function inspectVideo(file: File): Promise<{ width: number; height: number; dura
   }).finally(() => URL.revokeObjectURL(src)) as Promise<{ width: number; height: number; durationSeconds: number }>;
 }
 
+/** Signed, short-lived playback links for finished library videos (owner-only on the Worker). */
+export async function playbackUrls(ids: string[]): Promise<Record<string, string>> {
+  if (!ids.length) return {};
+  const token = await accessToken();
+  if (!token) return {};
+  const r = await fetch(new URL("/api/media/playback", API), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ ids: ids.slice(0, 30) }),
+  });
+  if (!r.ok) return {};
+  return ((await r.json()) as { urls?: Record<string, string> }).urls ?? {};
+}
+
 /**
  * Uploads a finished render into the Titanposting media library (same UploadThing route the
  * scheduler uses: owner JWT, quota reservation, verified callback) and returns the media id.

@@ -141,7 +141,7 @@ export function ControlPanel({ p, set, patch, busy, limits, onGenerate, classNam
             id="prompt" value={p.prompt} rows={5} maxLength={1000}
             onChange={(e) => set("prompt", e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canGo) onGenerate(); }}
-            placeholder="Describe your scene in detail: subject, camera move, light, mood."
+            placeholder="Describe the scene in full sentences: who or what, how it moves, the camera, the light and mood."
             className="mt-1.5 w-full resize-none bg-transparent text-[14px] leading-snug text-fg outline-none placeholder:text-dim"
           />
           <div className="mt-1 flex items-center gap-1.5">
@@ -149,6 +149,18 @@ export function ControlPanel({ p, set, patch, busy, limits, onGenerate, classNam
             <button type="button" onClick={() => setTab("audio")} className="rounded-lg bg-white/[0.07] px-2.5 py-1.5 text-[12.5px] font-bold transition-colors hover:bg-white/[0.15]">Audio {audioOn ? "On" : "Off"}</button>
             <span className="num ml-auto text-[11px] text-dim">{p.prompt.length}/1000</span>
           </div>
+          <details className="mt-2 rounded-lg bg-white/[0.04] px-2.5 py-2 text-[12.5px] text-mute">
+            <summary className="cursor-pointer font-semibold text-fg">Tips for a better video</summary>
+            <div className="mt-2 space-y-2 leading-snug">
+              <p><strong className="text-fg">Write 2 to 4 full sentences.</strong> Short prompts like &ldquo;a car&rdquo; give plain results.</p>
+              <p><strong className="text-fg">Say what moves</strong> (walking, steam rising, waves) and <strong className="text-fg">what the camera does</strong> (follows from behind, slow push-in, glides forward).</p>
+              <p><strong className="text-fg">Add light and look:</strong> golden hour, neon at night, soft window light, shallow depth of field.</p>
+              <p><strong className="text-fg">Keep it simple:</strong> one subject and one camera move work best. Fast action, crowds, close-up hands and faces, and text in the picture are still hard for TITAN V1.</p>
+              <p className="text-dim">Example: A woman in a long red coat walks slowly away from the camera down a rainy city street at night. Neon signs reflect on the wet asphalt. The camera follows smoothly from behind. Cinematic lighting, shallow depth of field.</p>
+              <button type="button" onClick={() => set("prompt", "A woman in a long red coat walks slowly away from the camera down a rainy city street at night. Neon signs in pink and blue reflect on the wet asphalt. The camera follows smoothly from behind at waist height. Light mist, soft glow, cinematic lighting, shallow depth of field, realistic.")}
+                className="rounded-lg bg-white/[0.07] px-2.5 py-1.5 text-[12.5px] font-bold text-fg transition-colors hover:bg-white/[0.15]">Use this example</button>
+            </div>
+          </details>
         </Card>
 
         <div className="grid grid-cols-2 gap-2">

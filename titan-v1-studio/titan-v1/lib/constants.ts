@@ -72,10 +72,9 @@ export const BGM_TRACKS: { id: string; name: string; prompt: string }[] = [
 ];
 
 export const EXAMPLES: { prompt: string; aspect: AspectId }[] = [
-  { prompt: "Aerial drone shot over a neon-lit city at night, rain on reflective streets", aspect: "16:9" },
-  { prompt: "Slow dolly push-in on a lone astronaut walking across red desert dunes, golden hour", aspect: "16:9" },
-  { prompt: "Extreme macro of a water droplet splashing in slow motion, shallow depth of field", aspect: "9:16" },
-  { prompt: "A samurai stands still as cherry blossoms fall around him, shot on 35mm film", aspect: "9:16" },
+  { prompt: "A woman in a long red coat walks slowly away from the camera down a rainy city street at night. Neon signs in pink and blue reflect on the wet asphalt. The camera follows smoothly from behind at waist height. Light mist, soft glow, cinematic lighting, shallow depth of field, realistic.", aspect: "9:16" },
+  { prompt: "A slow aerial shot gliding forward over a calm turquoise lake surrounded by pine-covered mountains at sunrise. Golden light hits the mountain peaks, thin mist floats over the water. Gentle camera movement, soft warm colours, ultra realistic landscape, natural light.", aspect: "16:9" },
+  { prompt: "Extreme close-up of a coffee cup on a wooden table by a window in the morning. Steam rises slowly from the coffee, soft sunlight comes through the window and lights the steam. The camera pushes in very slowly. Warm tones, shallow depth of field, realistic, calm mood.", aspect: "9:16" },
 ];
 
 export const DEFAULT_PARAMS: StudioParams = {

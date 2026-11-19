@@ -61,4 +61,5 @@ export interface SavedItem {
   aspect: AspectId;
   mediaId: string;
   createdAt: string;
+  url?: string; // signed playback link (1 h), fetched from Titanposting
 }

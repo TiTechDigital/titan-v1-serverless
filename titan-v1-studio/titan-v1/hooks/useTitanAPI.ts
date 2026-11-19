@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BGM_TRACKS, RESOLUTIONS, STAGES, estimateMs } from "@/lib/constants";
 import type { AspectId, GenStatus, HistoryItem, SavedItem, StudioParams, TitanResult } from "@/lib/types";
 import { authFetch } from "@/lib/supabaseClient";
-import { saveToLibrary } from "@/lib/titanposting";
+import { playbackUrls, saveToLibrary } from "@/lib/titanposting";
 import { useToasts } from "./useToasts";
 
 /**
@@ -215,7 +215,11 @@ export function useTitanAPI() {
       const r = await authFetch("/api/history", { cache: "no-store" });
       if (!r.ok) return;
       const d = (await r.json()) as { items: Array<{ id: string; prompt: string; aspect: AspectId; media_asset_id: string | null; created_at: string }> };
-      setSaved(d.items.filter((x) => x.media_asset_id).map((x) => ({ id: x.id, prompt: x.prompt, aspect: x.aspect, mediaId: x.media_asset_id!, createdAt: x.created_at })));
+      const items: SavedItem[] = d.items.filter((x) => x.media_asset_id).map((x) => ({ id: x.id, prompt: x.prompt, aspect: x.aspect, mediaId: x.media_asset_id!, createdAt: x.created_at }));
+      setSaved(items);
+      // fetch playable links; the list is already visible while they load
+      const urls = await playbackUrls(items.map((x) => x.mediaId));
+      setSaved(items.map((x) => ({ ...x, url: urls[x.mediaId] })));
     } catch {}
   }, []);
   useEffect(() => { void loadSaved(); }, [loadSaved]);

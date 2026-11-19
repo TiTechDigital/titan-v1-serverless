@@ -10,10 +10,10 @@ import { useEntitlement } from "@/hooks/useEntitlement";
 import { useTitanAPI } from "@/hooks/useTitanAPI";
 import { DEFAULT_PARAMS } from "@/lib/constants";
 import { composerUrl } from "@/lib/titanposting";
-import type { AspectId, HistoryItem, PatchParams, SetParam, StudioParams } from "@/lib/types";
+import type { AspectId, HistoryItem, PatchParams, SavedItem, SetParam, StudioParams } from "@/lib/types";
 
 const STEPS = [
-  ["Describe the shot", "Write what happens, how the camera moves and how it is lit. Use Camera and light to add common moves."],
+  ["Describe the shot", "Write 2 to 4 full sentences: what moves, what the camera does, how it is lit. Keep it to one subject and one camera move. Open Tips for a better video under the prompt for an example."],
   ["Choose quality, length and format", "Fast takes about 2 minutes, Detailed about 6. Vertical 9:16 is for Shorts, Reels and TikTok."],
   ["Add voice and music", "Optional. Write a script and pick a voice, and pick a music track. Both are mixed into the final file."],
   ["Generate", "A worker may need a few minutes to start before it renders. Finished videos stay here until you refresh the page."],
@@ -39,6 +39,7 @@ function Studio() {
     api.generate({ ...p, durationSec: Math.min(p.durationSec, ent.limits.maxSeconds), autoDuration: p.autoDuration && ent.limits.maxSeconds > 5 });
   };
   const savedOnly = api.saved.filter((x) => !api.history.some((h) => h.mediaId === x.mediaId));
+  const toItem = (x: SavedItem): HistoryItem => ({ id: Date.parse(x.createdAt) || 0, mediaId: x.mediaId, prompt: x.prompt, aspect: x.aspect, result: { videoUrl: x.url!, elapsedMs: 0 } });
   const empty = api.history.length === 0 && savedOnly.length === 0 && !busy && !failed;
 
   const tab = (id: "history" | "how", label: string, icon: React.ReactNode) => (
@@ -85,7 +86,10 @@ function Studio() {
                 {api.history.map((it, i) => (
                   <TakeCard key={it.id} item={it} n={api.history.length - i} onOpen={setOpen} />
                 ))}
-                {savedOnly.map((it) => (
+                {savedOnly.filter((it) => it.url).map((it, i, all) => (
+                  <TakeCard key={it.id} item={toItem(it)} n={all.length - i} onOpen={setOpen} />
+                ))}
+                {savedOnly.filter((it) => !it.url).map((it) => (
                   <div key={it.id} className="mb-4 break-inside-avoid rounded-2xl border border-white/10 bg-black/30 p-3">
                     <p className="line-clamp-3 text-[12.5px] text-mute">{it.prompt}</p>
                     <div className="mt-2 flex items-center justify-between text-[11.5px] text-dim">
