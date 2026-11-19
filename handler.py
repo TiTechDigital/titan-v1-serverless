@@ -36,8 +36,16 @@ MAX_SECONDS_HARD = 20.0
 # LTX render size (long side, short side). Multiples of 32, kept at or below 720p.
 # Wan stays at 480p (flow_shift=3.0 is tuned for it); frames are resized for Wan.
 LTX_SIZES = {"480": (704, 480), "544": (960, 544), "720": (1216, 704)}
-DEFAULT_LTX_SIZE = os.environ.get("LTX_SIZE", "544") if os.environ.get("LTX_SIZE", "544") in LTX_SIZES else "544"
-DEFAULT_LTX_STEPS = int(os.environ.get("LTX_STEPS", "30"))
+# LTX model: "13b" = LTX-Video 0.9.8 13B distilled (default), "2b" = original small model + titan LoRA.
+LTX_13B_REPO = os.environ.get("LTX_13B_REPO", "Lightricks/LTX-Video-0.9.8-13B-distilled")
+DEFAULT_LTX_MODEL = os.environ.get("LTX_MODEL", "13b").lower()
+if DEFAULT_LTX_MODEL not in ("13b", "2b"):
+    DEFAULT_LTX_MODEL = "13b"
+# per-model defaults (distilled 13B needs ~8 steps and guidance 1; 2B uses 30 steps with guidance 3.5)
+_DEFAULT_SIZE = {"13b": "720", "2b": "544"}
+_DEFAULT_STEPS = {"13b": 8, "2b": 30}
+ENV_LTX_SIZE = os.environ.get("LTX_SIZE")
+ENV_LTX_STEPS = os.environ.get("LTX_STEPS")
 DEFAULT_CRF = int(os.environ.get("VIDEO_CRF", "18"))
 
 print("⚡ [TITAN V1] Duke inicializuar motorët...")
@@ -57,32 +65,70 @@ def load_lora_remapped(pipeline, repo_file, adapter_name):
 
 # Lazy loaded pipelines për të mos tejkaluar limitin e System RAM (~46-50 GB)
 ltx = None
+ltx_kind = None   # "13b" | "2b": which model `ltx` currently holds
 wan = None
 
 
-def get_ltx_pipe():
-    global ltx
+def _load_ltx_13b():
+    """LTX-Video 0.9.8 13B distilled. Components are loaded one by one from their own subfolder:
+    the repo contains stray nested copies (vae/text_encoder/...) that a whole-repo download would also fetch."""
+    from diffusers import (AutoencoderKLLTXVideo, FlowMatchEulerDiscreteScheduler,
+                           LTXConditionPipeline, LTXVideoTransformer3DModel)
+    from transformers import T5EncoderModel, T5TokenizerFast
+    repo, kw = LTX_13B_REPO, {"torch_dtype": torch.bfloat16}
+    pipe = LTXConditionPipeline(
+        scheduler=FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler"),
+        vae=AutoencoderKLLTXVideo.from_pretrained(repo, subfolder="vae", **kw),
+        text_encoder=T5EncoderModel.from_pretrained(repo, subfolder="text_encoder", **kw),
+        tokenizer=T5TokenizerFast.from_pretrained(repo, subfolder="tokenizer"),
+        transformer=LTXVideoTransformer3DModel.from_pretrained(repo, subfolder="transformer", **kw),
+    )
+    pipe.vae.enable_tiling()
+    return pipe
+
+
+def _load_ltx_2b():
+    pipe = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.bfloat16)
+    try:
+        load_lora_remapped(pipe, LTX_LORA_FILE, "titan_ltx")   # the titan LoRA is built for the 2B model only
+    except Exception as e:
+        print(f"⚠️ LTX LoRA nuk u ngarkua (po përdoret modeli bazë): {e}")
+    return pipe
+
+
+def get_ltx_pipe(kind="13b"):
+    """Returns (pipeline, kind actually loaded). Falls back to 2B if the 13B model cannot be loaded."""
+    global ltx, ltx_kind
+    if ltx is not None and ltx_kind != kind:
+        unload_ltx_pipe()
     if ltx is None:
-        print("⏳ Duke ngarkuar LTX-Video...")
-        ltx = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.bfloat16)
+        print(f"⏳ Duke ngarkuar LTX-Video ({kind})...")
         try:
-            load_lora_remapped(ltx, LTX_LORA_FILE, "titan_ltx")
+            ltx = _load_ltx_13b() if kind == "13b" else _load_ltx_2b()
+            ltx_kind = kind
         except Exception as e:
-            print(f"⚠️ LTX LoRA nuk u ngarkua (po përdoret modeli bazë): {e}")
+            if kind == "2b":
+                raise
+            print(f"⚠️ LTX 13B nuk u ngarkua, po kalohet te 2B: {e}")
+            gc.collect()
+            torch.cuda.empty_cache()
+            ltx = _load_ltx_2b()
+            ltx_kind = "2b"
         if OFFLOAD:
             ltx.enable_model_cpu_offload()
         else:
             ltx.to("cuda")
-        print("✅ LTX-Video u ngarkua")
-    return ltx
+        print(f"✅ LTX-Video ({ltx_kind}) u ngarkua")
+    return ltx, ltx_kind
 
 
 def unload_ltx_pipe():
-    global ltx
+    global ltx, ltx_kind
     if ltx is not None:
         print("🧹 Duke liruar LTX-Video nga memoria...")
         del ltx
         ltx = None
+        ltx_kind = None
         gc.collect()
         torch.cuda.empty_cache()
 
@@ -322,28 +368,56 @@ def handler(job):
     run_id = int(time.time())
     h, w = (704, 480) if aspect == "9:16" else (480, 704)           # Wan (480p) size
     # Optional job inputs let you A/B test from the RunPod console. Studio never forwards them.
-    ltx_long, ltx_short = LTX_SIZES.get(str(job_input.get("ltx_size", DEFAULT_LTX_SIZE)), LTX_SIZES[DEFAULT_LTX_SIZE])
+    want_kind = str(job_input.get("ltx_model", DEFAULT_LTX_MODEL)).lower()
+    if want_kind not in ("13b", "2b"):
+        want_kind = DEFAULT_LTX_MODEL
+    size_key = str(job_input.get("ltx_size", ENV_LTX_SIZE or _DEFAULT_SIZE[want_kind]))
+    if size_key not in LTX_SIZES:
+        size_key = _DEFAULT_SIZE[want_kind]
+    ltx_long, ltx_short = LTX_SIZES[size_key]
     ltx_h, ltx_w = (ltx_long, ltx_short) if aspect == "9:16" else (ltx_short, ltx_long)
-    ltx_steps = max(8, min(50, int(job_input.get("ltx_steps", DEFAULT_LTX_STEPS))))
+    ltx_steps = max(4, min(50, int(job_input.get("ltx_steps", ENV_LTX_STEPS or _DEFAULT_STEPS[want_kind]))))
     crf = max(14, min(28, int(job_input.get("crf", DEFAULT_CRF))))
-    print(f"⚙️ LTX {ltx_w}x{ltx_h}, {ltx_steps} steps, crf {crf}")
+    print(f"⚙️ LTX {want_kind} {ltx_w}x{ltx_h}, {ltx_steps} steps, crf {crf}")
     audio_file = f"/tmp/audio_{run_id}.wav"
     music_file = f"/tmp/music_{run_id}.wav"
     video_file = f"/tmp/video_{run_id}.mp4"
     output_final = f"/tmp/titan_{run_id}.mp4"
 
     # 1. LTX: lëvizja (8k+1 frames @24fps)
-    ltx_pipe = get_ltx_pipe()
+    ltx_pipe, used_kind = get_ltx_pipe(want_kind)
+    if used_kind != want_kind:   # 13B failed to load -> 2B fallback needs its own size/steps
+        want_kind = used_kind
+        if "ltx_size" not in job_input and not ENV_LTX_SIZE:
+            ltx_long, ltx_short = LTX_SIZES[_DEFAULT_SIZE[used_kind]]
+            ltx_h, ltx_w = (ltx_long, ltx_short) if aspect == "9:16" else (ltx_short, ltx_long)
+        if "ltx_steps" not in job_input and not ENV_LTX_STEPS:
+            ltx_steps = _DEFAULT_STEPS[used_kind]
+        print(f"⚙️ LTX fallback {used_kind} {ltx_w}x{ltx_h}, {ltx_steps} steps")
     ltx_frames_n = int(round(seconds * LTX_FPS / 8)) * 8 + 1
     with torch.inference_mode():
-        frames = ltx_pipe(
-            prompt=prompt,
-            negative_prompt="worst quality, blurry, deformed, lowres",
-            width=ltx_w, height=ltx_h,
-            num_frames=ltx_frames_n,
-            num_inference_steps=ltx_steps,
-            guidance_scale=3.5
-        ).frames[0]
+        if used_kind == "13b":
+            # distilled: no classifier-free guidance, so no negative prompt is needed
+            frames = ltx_pipe(
+                prompt=prompt,
+                width=ltx_w, height=ltx_h,
+                num_frames=ltx_frames_n,
+                frame_rate=LTX_FPS,
+                num_inference_steps=ltx_steps,
+                guidance_scale=1.0,
+                decode_timestep=0.05,
+                decode_noise_scale=0.025,
+                output_type="pil",
+            ).frames[0]
+        else:
+            frames = ltx_pipe(
+                prompt=prompt,
+                negative_prompt="worst quality, blurry, deformed, lowres, bad anatomy, deformed hands, extra fingers, fused fingers, distorted body, extra limbs, disfigured",
+                width=ltx_w, height=ltx_h,
+                num_frames=ltx_frames_n,
+                num_inference_steps=ltx_steps,
+                guidance_scale=3.5
+            ).frames[0]
     frames = [to_pil(f) for f in frames]
     print(f"⏱ LTX {time.time() - start_t:.1f}s ({len(frames)} frames)")
     in_fps = LTX_FPS
