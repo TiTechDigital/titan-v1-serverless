@@ -16,7 +16,7 @@ export const DIRECTOR_PILLS = {
   ],
 } as const;
 
-/** Presets drive the worker's Wan 14B pass (`wan_steps`, `wan_strength`). */
+/** Presets drive the worker's second-stage settings (`wan_steps`, `wan_strength`). */
 export const MODELS: { id: ModelId; name: string; tag: string; desc: string; steps: number; strength: number }[] = [
   { id: "turbo", name: "Fast", tag: "~2 min", desc: "Quick preview, light cinema pass", steps: 10, strength: 0.45 },
   { id: "cinema", name: "Balanced", tag: "~4 min", desc: "Recommended look and speed", steps: 18, strength: 0.6 },
@@ -29,8 +29,8 @@ export const ASPECTS: { id: AspectId; label: string; sub: string; ratio: number 
 ];
 
 export const RESOLUTIONS: { id: ResolutionId; label: string; sub: string; enable4k: boolean; true4k: boolean }[] = [
-  { id: "draft", label: "Draft", sub: "704p · no upscale", enable4k: false, true4k: false },
-  { id: "hd", label: "Full HD", sub: "1080p · Real-ESRGAN", enable4k: true, true4k: false },
+  { id: "draft", label: "Draft", sub: "704p", enable4k: false, true4k: false },
+  { id: "hd", label: "Full HD", sub: "1080p", enable4k: true, true4k: false },
   { id: "uhd", label: "4K", sub: "2160p · slowest", enable4k: true, true4k: true },
 ];
 
@@ -113,9 +113,9 @@ export function estimateMs(p: StudioParams, wan = true) {
 }
 
 export const STAGES = [
-  { key: "load", label: "Loading models" },
-  { key: "motion", label: "Motion pass · LTX" },
-  { key: "cinema", label: "Cinema pass · Wan 14B" },
-  { key: "upscale", label: "Upscaling" },
-  { key: "audio", label: "Voice, music & mix" },
+  { key: "load", label: "Loading TITAN V1" },
+  { key: "motion", label: "TITAN V1 is generating" },
+  { key: "cinema", label: "TITAN V1 is generating" },
+  { key: "upscale", label: "TITAN V1 is finishing" },
+  { key: "audio", label: "TITAN V1 · voice & music" },
 ] as const;

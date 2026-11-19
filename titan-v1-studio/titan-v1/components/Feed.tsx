@@ -27,8 +27,9 @@ export function Hero({ onPick }: { onPick: (prompt: string, aspect: AspectId) =>
           Prompt in.<br />Finished video out.
         </h1>
         <p className="mx-auto mt-5 max-w-[460px] text-[15px] text-mute">
-          One render gives you the motion, the cinema pass, the voice-over and the music.
+          One render gives you the motion, the cinema look, the voice-over and the music.
         </p>
+        <p className="mx-auto mt-3 max-w-[420px] text-[12px] text-dim">TITAN V1 loads from storage and can be slow at first. We are working to make it faster.</p>
         <div className="mx-auto mt-7 flex max-w-[760px] flex-wrap justify-center gap-2">
           {EXAMPLES.map((e) => (
             <button key={e.prompt} type="button" onClick={() => onPick(e.prompt, e.aspect)}
@@ -71,7 +72,7 @@ export function JobCard({
             <p className="num text-[40px] font-medium leading-none">{clock(elapsedMs)}</p>
             <p className="text-[13.5px] font-semibold">{status === "queued" ? "Waiting for a GPU worker" : STAGES[stage].label}</p>
             <p className="max-w-[230px] text-[12px] text-dim">
-              {status === "queued" ? "A cold start can take a few minutes." : "The stage is an estimate based on your settings."}
+              {status === "queued" ? "TITAN V1 loads from storage, so the first start can be slow. We are working to make it faster." : "The stage is an estimate based on your settings."}
             </p>
             <button type="button" className="btn mt-1" onClick={onCancel}><X size={14} /> Cancel</button>
           </>

@@ -24,7 +24,7 @@ export function Lightbox({ item, onClose, onReuse, onSave, saving }: { item: His
       </div>
       <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3 pt-3" onClick={(e) => e.stopPropagation()}>
         <p className="line-clamp-2 text-[13.5px] text-mute">{item.prompt}</p>
-        {r.wanUsed === false && <p className="text-[12.5px] text-tally">The cinema pass failed on the worker. This clip is the base motion only.</p>}
+        {r.wanUsed === false && <p className="text-[12.5px] text-tally">The cinema pass did not run. This clip is the base TITAN V1 motion only.</p>}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="num text-[12px] text-dim">
             {[r.resolution, r.duration && `${r.duration} s`, r.voiceUsed && r.voiceUsed !== "none" && r.voiceUsed, `${Math.round(r.elapsedMs / 1000)} s render`].filter(Boolean).join("   ")}

@@ -18,7 +18,7 @@ const SHEET_TITLE: Record<Exclude<Sheet, null>, string> = {
   model: "Quality", duration: "Duration", aspect: "Aspect ratio", resolution: "Resolution", tune: "Fine-tune", add: "Add to prompt",
 };
 const SUB: Record<string, string> = { "9:16": "Shorts, Reels, TikTok", "16:9": "YouTube, cinema" };
-const RES_PX: Record<string, string> = { draft: "704p, no upscale", hd: "1080p, Real-ESRGAN", uhd: "2160p, slowest" };
+const RES_PX: Record<string, string> = { draft: "704p", hd: "1080p", uhd: "2160p, slowest" };
 const RES_SHORT: Record<string, string> = { draft: "704p", hd: "1080p", uhd: "4K" };
 
 // SMPTE test pattern as the preset card's picture.
