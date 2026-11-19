@@ -33,6 +33,13 @@ PLANS = {
 }
 MAX_SECONDS_HARD = 20.0
 
+# LTX render size (long side, short side). Multiples of 32, kept at or below 720p.
+# Wan stays at 480p (flow_shift=3.0 is tuned for it); frames are resized for Wan.
+LTX_SIZES = {"480": (704, 480), "544": (960, 544), "720": (1216, 704)}
+DEFAULT_LTX_SIZE = os.environ.get("LTX_SIZE", "544") if os.environ.get("LTX_SIZE", "544") in LTX_SIZES else "544"
+DEFAULT_LTX_STEPS = int(os.environ.get("LTX_STEPS", "30"))
+DEFAULT_CRF = int(os.environ.get("VIDEO_CRF", "18"))
+
 print("⚡ [TITAN V1] Duke inicializuar motorët...")
 
 
@@ -313,7 +320,13 @@ def handler(job):
 
     start_t = time.time()
     run_id = int(time.time())
-    h, w = (704, 480) if aspect == "9:16" else (480, 704)
+    h, w = (704, 480) if aspect == "9:16" else (480, 704)           # Wan (480p) size
+    # Optional job inputs let you A/B test from the RunPod console. Studio never forwards them.
+    ltx_long, ltx_short = LTX_SIZES.get(str(job_input.get("ltx_size", DEFAULT_LTX_SIZE)), LTX_SIZES[DEFAULT_LTX_SIZE])
+    ltx_h, ltx_w = (ltx_long, ltx_short) if aspect == "9:16" else (ltx_short, ltx_long)
+    ltx_steps = max(8, min(50, int(job_input.get("ltx_steps", DEFAULT_LTX_STEPS))))
+    crf = max(14, min(28, int(job_input.get("crf", DEFAULT_CRF))))
+    print(f"⚙️ LTX {ltx_w}x{ltx_h}, {ltx_steps} steps, crf {crf}")
     audio_file = f"/tmp/audio_{run_id}.wav"
     music_file = f"/tmp/music_{run_id}.wav"
     video_file = f"/tmp/video_{run_id}.mp4"
@@ -326,9 +339,9 @@ def handler(job):
         frames = ltx_pipe(
             prompt=prompt,
             negative_prompt="worst quality, blurry, deformed, lowres",
-            width=w, height=h,
+            width=ltx_w, height=ltx_h,
             num_frames=ltx_frames_n,
-            num_inference_steps=16,
+            num_inference_steps=ltx_steps,
             guidance_scale=3.5
         ).frames[0]
     frames = [to_pil(f) for f in frames]
@@ -345,7 +358,7 @@ def handler(job):
         try:
             wan_n = int(round(seconds * WAN_FPS / 4)) * 4 + 1
             idx = np.linspace(0, len(frames) - 1, wan_n).round().astype(int)
-            src = [frames[i] for i in idx]
+            src = [frames[i].resize((w, h), Image.LANCZOS) for i in idx]   # Wan runs at 480p
             torch.cuda.empty_cache()
             with torch.inference_mode():
                 wan_out = wan_pipe(
@@ -379,11 +392,12 @@ def handler(job):
                 print(f"⚠️ Real-ESRGAN dështoi, po përdoret Lanczos: {e}")
         long_side, short_side = (3840, 2160) if true_4k else (1920, 1080)
     else:
-        long_side, short_side = max(w, h), min(w, h)
+        base_w, base_h = frames[0].size
+        long_side, short_side = max(base_w, base_h), min(base_w, base_h)
     print(f"⏱ ESRGAN {time.time() - start_t:.1f}s")
     target_w, target_h = (short_side, long_side) if aspect == "9:16" else (long_side, short_side)
     encode_frames(frames, in_fps, target_w, target_h, video_file,
-                  crf=23, level="5.2" if (enable_4k and true_4k) else "4.2")
+                  crf=crf, level="5.2" if (enable_4k and true_4k) else "4.2")
     del frames
     gc.collect()
     torch.cuda.empty_cache()
