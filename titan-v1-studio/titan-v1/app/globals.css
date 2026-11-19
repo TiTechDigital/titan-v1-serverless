@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html, body { background: #080808; color: #F2F2F2; }
+body {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible { outline: 2px solid #B7C7FF; outline-offset: 2px; }
+::selection { background: #2F5BFF; color: #fff; }
+
+@layer components {
+  /* Heavy, wide, uppercase: the headline voice of the product */
+  .display {
+    font-weight: 800;
+    font-stretch: 125%;
+    text-transform: uppercase;
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+  }
+  .field {
+    @apply w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[13.5px] text-fg placeholder:text-dim
+           outline-none transition-colors hover:border-white/20 focus:border-cobalt;
+  }
+  select.field {
+    appearance: none;
+    padding-right: 30px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'><path d='M1 1l4 4 4-4' stroke='%239A9A9A' stroke-width='1.5' stroke-linecap='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+  .btn {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 text-[13px] font-semibold text-fg
+           transition-colors hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-solid {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-[13px] font-semibold text-black transition-colors hover:bg-white/90;
+  }
+  .pill {
+    @apply inline-flex h-9 items-center gap-2 rounded-xl bg-white/[0.06] px-3 text-[13px] font-semibold text-fg
+           transition-colors hover:bg-white/[0.12] aria-expanded:bg-white/[0.16];
+  }
+  .generate {
+    @apply flex flex-col items-center justify-center gap-0.5 rounded-xl bg-gradient-to-b from-[#6F9BFF] to-[#2F5BFF] text-[13px] font-extrabold uppercase tracking-wide text-white
+           shadow-[inset_0_1px_0_rgba(255,255,255,.35)] transition hover:brightness-110 active:scale-[0.98]
+           disabled:cursor-not-allowed disabled:from-white/10 disabled:to-white/10 disabled:text-dim disabled:shadow-none disabled:brightness-100;
+  }
+  .seg { @apply grid gap-1 rounded-xl bg-white/[0.05] p-1; }
+  .seg-item { @apply rounded-lg px-2 py-1.5 text-center text-[12.5px] font-semibold text-mute transition-colors hover:text-fg; }
+  .seg-item[aria-pressed="true"] { @apply bg-white text-black; }
+  .num { font-family: var(--font-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+}
+
+input[type="range"].titan-range {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 3px; border-radius: 9999px; outline: none; cursor: pointer;
+  background: linear-gradient(to right, #2F5BFF var(--p, 50%), #333 var(--p, 50%));
+}
+input[type="range"].titan-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px; border-radius: 9999px; background: #fff; cursor: pointer; border: 0;
+}
+input[type="range"].titan-range::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 9999px; background: #fff; cursor: pointer; border: 0;
+}
+input[type="range"].titan-range:focus-visible { outline-offset: 6px; }
+
+* { scrollbar-width: thin; scrollbar-color: #333 transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 9999px; }
+
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.shimmer::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 0.01ms !important; }
+}

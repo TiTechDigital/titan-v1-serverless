@@ -20,6 +20,18 @@ WAN_LORA_FILE = "titan_cinema_14b_lora_v2_400steps.safetensors"      # Wan 2.1 1
 WAN_MODEL = os.environ.get("WAN_MODEL", "Wan-AI/Wan2.1-T2V-14B-Diffusers")
 
 LTX_FPS, WAN_FPS, OUT_FPS = 24, 16, 24
+OFFLOAD = os.environ.get("OFFLOAD", "0") == "1"   # 98 GB GPU: keep everything resident
+
+# Plan capabilities. Quota (videos/month, trial expiry) is counted by the platform backend,
+# which must reject the job BEFORE calling RunPod. Worker only enforces what a tier may use.
+# Callers must be the platform backend (RunPod API key stays server-side), never the browser.
+PLANS = {
+    "free":  {"wan": False, "enable_4k": True,  "true_4k": True,  "max_seconds": 5.0},
+    "basic": {"wan": True,  "enable_4k": True,  "true_4k": True,  "max_seconds": 20.0},
+    "pro":   {"wan": True,  "enable_4k": True,  "true_4k": True,  "max_seconds": 20.0},
+    "ultra": {"wan": True,  "enable_4k": True,  "true_4k": True,  "max_seconds": 20.0},
+}
+MAX_SECONDS_HARD = 20.0
 
 print("⚡ [TITAN V1] Duke inicializuar motorët...")
 
@@ -50,7 +62,10 @@ def get_ltx_pipe():
             load_lora_remapped(ltx, LTX_LORA_FILE, "titan_ltx")
         except Exception as e:
             print(f"⚠️ LTX LoRA nuk u ngarkua (po përdoret modeli bazë): {e}")
-        ltx.enable_model_cpu_offload()
+        if OFFLOAD:
+            ltx.enable_model_cpu_offload()
+        else:
+            ltx.to("cuda")
         print("✅ LTX-Video u ngarkua")
     return ltx
 
@@ -77,7 +92,10 @@ def get_wan_pipe():
                 load_lora_remapped(wan, WAN_LORA_FILE, "titan_wan")
             except Exception as e:
                 print(f"⚠️ Wan LoRA nuk u ngarkua (Wan pa LoRA): {e}")
-            wan.enable_model_cpu_offload()
+            if OFFLOAD:
+                wan.enable_model_cpu_offload()
+            else:
+                wan.to("cuda")
             wan.vae.enable_tiling()
             print("✅ Wan 14B u ngarkua")
         except Exception as e:
@@ -274,19 +292,24 @@ def handler(job):
     voice = job_input.get("voice", "adam")
     tts_engine = (job_input.get("tts", "chattts") or "chattts").lower()   # "chattts" | "kokoro"
     aspect = job_input.get("aspect", "9:16")
-    enable_4k = job_input.get("enable_4k", True)      # ESRGAN + upscale to final size
-    true_4k = bool(job_input.get("true_4k", False))   # False -> 1080x1920, True -> 2160x3840
+    plan_name = str(job_input.get("plan", "free")).lower().strip()
+    plan = PLANS.get(plan_name) or PLANS["free"]
+    if plan_name not in PLANS:
+        plan_name = "free"
+    enable_4k = bool(job_input.get("enable_4k", True)) and plan["enable_4k"]   # ESRGAN + upscale to final size
+    true_4k = bool(job_input.get("true_4k", False)) and plan["true_4k"]        # False -> 1080x1920, True -> 2160x3840
+    use_wan = plan["wan"]
     wan_strength = float(job_input.get("wan_strength", 0.6))
     wan_steps = int(job_input.get("wan_steps", 25))
 
-    # Kohëzgjatja 2-10 sek. Pa "duration": nga teksti i narracionit, ose 5s.
+    # Kohëzgjatja 2-20 sek (cap sipas planit). Pa "duration": nga teksti i narracionit, ose 5s.
     if "duration" in job_input:
         seconds = float(job_input["duration"])
     elif narration:
         seconds = len(narration.split()) / 2.5 + 0.5
     else:
         seconds = 5.0
-    seconds = max(2.0, min(10.0, seconds))
+    seconds = max(2.0, min(plan["max_seconds"], MAX_SECONDS_HARD, seconds))
 
     start_t = time.time()
     run_id = int(time.time())
@@ -309,6 +332,7 @@ def handler(job):
             guidance_scale=3.5
         ).frames[0]
     frames = [to_pil(f) for f in frames]
+    print(f"⏱ LTX {time.time() - start_t:.1f}s ({len(frames)} frames)")
     in_fps = LTX_FPS
     wan_used = False
 
@@ -316,7 +340,7 @@ def handler(job):
     unload_ltx_pipe()
 
     # 2. Wan 14B + LoRA: video-to-video mbi lëvizjen e LTX (4k+1 frames @16fps)
-    wan_pipe = get_wan_pipe()
+    wan_pipe = get_wan_pipe() if use_wan else None
     if wan_pipe is not None:
         try:
             wan_n = int(round(seconds * WAN_FPS / 4)) * 4 + 1
@@ -335,6 +359,7 @@ def handler(job):
                     output_type="pil",
                 ).frames[0]
             frames, in_fps, wan_used = [to_pil(f) for f in wan_out], WAN_FPS, True
+            print(f"⏱ Wan {time.time() - start_t:.1f}s ({len(frames)} frames)")
             del src, wan_out
         except Exception as e:
             print(f"⚠️ Wan dështoi, po përdoret dalja e LTX: {e}")
@@ -355,6 +380,7 @@ def handler(job):
         long_side, short_side = (3840, 2160) if true_4k else (1920, 1080)
     else:
         long_side, short_side = max(w, h), min(w, h)
+    print(f"⏱ ESRGAN {time.time() - start_t:.1f}s")
     target_w, target_h = (short_side, long_side) if aspect == "9:16" else (long_side, short_side)
     encode_frames(frames, in_fps, target_w, target_h, video_file,
                   crf=23, level="5.2" if (enable_4k and true_4k) else "4.2")
@@ -416,6 +442,7 @@ def handler(job):
 
     return {
         "status": "COMPLETED",
+        "plan": plan_name,
         "seconds_taken": round(time.time() - start_t, 2),
         "video_base64": f"data:video/mp4;base64,{video_b64}",
         "duration": round(total, 2),
